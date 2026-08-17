@@ -1,0 +1,54 @@
+# --- LaTeX -----------------------------------------------------------------
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# latexmk writes everything into docs/build (see docs/latexmkrc).
+# The finished PDF is the deliverable, so it is versioned; the rest is not.
+docs/build/*
+!docs/build/Main.pdf
+
+# --- C++ / CMake -----------------------------------------------------------
+# Anchored to the repository root on purpose. An unanchored `build/` would also
+# match docs/build and exclude the directory itself, and git cannot re-include a
+# file whose parent directory is excluded, so the rule above for Main.pdf would
+# silently stop working.
+/build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+compile_commands.json
+install_manifest.txt
+Testing/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.gcda
+*.gcno
+*.profraw
+
+# --- Project data ----------------------------------------------------------
+# Stores built by the library, and any downloaded test corpora.
+*.trident
+data/corpora/
+
+# --- Editors and OS --------------------------------------------------------
+.vscode/
+.idea/
+.cache/
+Thumbs.db

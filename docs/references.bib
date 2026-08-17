@@ -1,0 +1,127 @@
+% ============================================================================
+% references.bib
+%
+% Правило: тук влиза САМО източник, който е бил отворен и проверен. Няма
+% реконструирани по памет цитати. Липсващо поле остава \TODO, а не догадка.
+% Незапълнените места се намират с: grep -n 'TODO' references.bib
+% ============================================================================
+
+% --- Нормативни спецификации на W3C -------------------------------------
+
+@misc{w3c_rdf11_concepts,
+  author       = {Richard Cyganiak and David Wood and Markus Lanthaler},
+  title        = {{RDF} 1.1 Concepts and Abstract Syntax},
+  howpublished = {W3C Recommendation},
+  organization = {World Wide Web Consortium},
+  year         = {2014},
+  month        = feb,
+  note         = {\url{https://www.w3.org/TR/rdf11-concepts/}}
+}
+
+@misc{w3c_turtle,
+  author       = {Eric Prud'hommeaux and Gavin Carothers},
+  title        = {{RDF} 1.1 {Turtle}: Terse {RDF} Triple Language},
+  howpublished = {W3C Recommendation},
+  organization = {World Wide Web Consortium},
+  year         = {2014},
+  month        = feb,
+  note         = {\url{https://www.w3.org/TR/turtle/}}
+}
+
+@misc{w3c_ntriples,
+  author       = {Gavin Carothers and Andy Seaborne},
+  title        = {{RDF} 1.1 {N-Triples}: A line-based syntax for an {RDF} graph},
+  howpublished = {W3C Recommendation},
+  organization = {World Wide Web Consortium},
+  year         = {2014},
+  month        = feb,
+  note         = {\url{https://www.w3.org/TR/n-triples/}}
+}
+
+@misc{w3c_sparql11_query,
+  author       = {Steve Harris and Andy Seaborne},
+  title        = {{SPARQL} 1.1 Query Language},
+  howpublished = {W3C Recommendation},
+  organization = {World Wide Web Consortium},
+  year         = {2013},
+  month        = mar,
+  note         = {\url{https://www.w3.org/TR/sparql11-query/}}
+}
+
+@misc{w3c_rdf_schema,
+  author       = {Dan Brickley and Ramanathan V. Guha},
+  title        = {{RDF} {Schema} 1.1},
+  howpublished = {W3C Recommendation},
+  organization = {World Wide Web Consortium},
+  year         = {2014},
+  month        = feb,
+  note         = {\url{https://www.w3.org/TR/rdf-schema/}}
+}
+
+@misc{w3c_rdf11_semantics,
+  author       = {Patrick J. Hayes and Peter F. Patel-Schneider},
+  title        = {{RDF} 1.1 Semantics},
+  howpublished = {W3C Recommendation},
+  organization = {World Wide Web Consortium},
+  year         = {2014},
+  month        = feb,
+  note         = {\url{https://www.w3.org/TR/rdf11-mt/}}
+}
+
+@misc{w3c_owl2_overview,
+  author       = {{W3C OWL Working Group}},
+  title        = {{OWL} 2 {Web} {Ontology} {Language} Document Overview (Second Edition)},
+  howpublished = {W3C Recommendation},
+  organization = {World Wide Web Consortium},
+  year         = {2012},
+  month        = dec,
+  note         = {\url{https://www.w3.org/TR/owl2-overview/}}
+}
+
+@misc{w3c_sparql11_testsuite,
+  author       = {{W3C SPARQL Working Group}},
+  title        = {{SPARQL} 1.1 Test Suite},
+  organization = {World Wide Web Consortium},
+  year         = {2013},
+  note         = {\url{https://www.w3.org/2009/sparql/docs/tests/}}
+}
+
+% --- Научни публикации ---------------------------------------------------
+
+@article{neumann2010rdf3x,
+  author  = {Thomas Neumann and Gerhard Weikum},
+  title   = {The {RDF-3X} engine for scalable management of {RDF} data},
+  journal = {The VLDB Journal},
+  volume  = {19},
+  number  = {1},
+  pages   = {91--113},
+  year    = {2010}
+}
+
+@article{weiss2008hexastore,
+  author  = {Cathrin Weiss and Panagiotis Karras and Abraham Bernstein},
+  title   = {Hexastore: sextuple indexing for semantic web data management},
+  journal = {Proceedings of the VLDB Endowment},
+  volume  = {1},
+  number  = {1},
+  pages   = {1008--1019},
+  year    = {2008}
+}
+
+% --- Реализации, използвани като еталон при измерванията -----------------
+
+@misc{jena_docs,
+  author       = {{The Apache Software Foundation}},
+  title        = {{Apache} {Jena} Documentation},
+  year         = {\TODO{година на използваната версия}},
+  note         = {Версия: \TODO{версия на Jena, използвана при измерванията}.
+                  \url{https://jena.apache.org/documentation/}}
+}
+
+@misc{rdflib_docs,
+  author       = {{RDFLib Team}},
+  title        = {{RDFLib} Documentation},
+  year         = {\TODO{година на използваната версия}},
+  note         = {Версия: \TODO{версия на RDFLib, използвана при измерванията}.
+                  \url{https://rdflib.readthedocs.io/}}
+}

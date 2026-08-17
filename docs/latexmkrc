@@ -1,0 +1,10 @@
+# pdfLaTeX, НЕ XeLaTeX. Кирилицата минава през T2A + tempora, зададени в preamble.tex.
+$pdf_mode = 1;
+$bibtex_use = 2;
+$out_dir = 'build';
+# latexmk пуска bibtex с работна папка $out_dir, затова references.bib трябва да
+# се търси и едно ниво нагоре. Без този ред bibtex не намира базата, всички цитати
+# остават неразрешени и списъкът с литература излиза празен, а latexmk въпреки това
+# завършва с код 0. Проверено на тази машина: без реда 27 неразрешени цитата, с него 0.
+ensure_path('BIBINPUTS', '..');
+$clean_ext = 'bbl nav out snm synctex.gz run.xml';
