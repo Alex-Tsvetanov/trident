@@ -46,6 +46,8 @@ Testing/
 # Stores built by the library, and any downloaded test corpora.
 *.trident
 data/corpora/
+# The demo generates its dataset next to wherever it is run from.
+trident_demo_dataset.ttl
 
 # --- Editors and OS --------------------------------------------------------
 .vscode/

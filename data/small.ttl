@@ -1,0 +1,57 @@
+# A small graph with hand checked answers. Every expected result asserted in
+# tests/test_exec.cpp, tests/test_aggregate.cpp and tests/test_rdfs.cpp was
+# counted by hand from this file, not read off the implementation.
+#
+# 40 triples: 6 for alice, 4 for bob, 3 for carol, 3 for dave, 5 for each of the
+# four books, and 4 in the schema.
+
+@prefix ex:   <http://example.org/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:alice a ex:Author ;
+    ex:name "Alice" ;
+    ex:age 34 ;
+    ex:homepage <http://example.org/people/alice> ;
+    ex:knows ex:bob, ex:carol .
+
+ex:bob a ex:Author ;
+    ex:name "Bob" ;
+    ex:age 41 ;
+    ex:knows ex:carol .
+
+ex:carol a ex:Author ;
+    ex:name "Carol" ;
+    ex:age 29 .
+
+ex:dave a ex:Reader ;
+    ex:name "Dave" ;
+    ex:age 52 .
+
+ex:book1 a ex:Book ;
+    ex:title "Graphs"@en ;
+    ex:author ex:alice ;
+    ex:year 2019 ;
+    ex:pages 210 .
+
+ex:book2 a ex:Book ;
+    ex:title "Queries"@en ;
+    ex:author ex:alice ;
+    ex:year 2021 ;
+    ex:pages 340 .
+
+ex:book3 a ex:Book ;
+    ex:title "Indexes"@en ;
+    ex:author ex:bob ;
+    ex:year 2021 ;
+    ex:pages 150 .
+
+ex:book4 a ex:Book ;
+    ex:title "Schemas"@en ;
+    ex:author ex:carol ;
+    ex:year 2023 ;
+    ex:pages 275 .
+
+ex:Author rdfs:subClassOf ex:Person .
+ex:Reader rdfs:subClassOf ex:Person .
+ex:author rdfs:domain ex:Book .
+ex:author rdfs:range ex:Person .

@@ -1,0 +1,8 @@
+<http://example.org/alice> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Author> .
+<http://example.org/alice> <http://example.org/name> "Alice" .
+<http://example.org/alice> <http://example.org/age> "34"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<http://example.org/bob> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://example.org/Author> .
+<http://example.org/bob> <http://example.org/name> "Bob" .
+<http://example.org/bob> <http://example.org/age> "41"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:shared <http://example.org/name> "an unnamed subject" .
+<http://example.org/alice> <http://example.org/label> "Алекс"@bg .
