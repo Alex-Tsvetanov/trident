@@ -4,36 +4,25 @@ An embedded RDF triple store with a SPARQL 1.1 query engine. Course project for 
 
 ## What it is
 
-Trident is a C++ library that stores RDF data and answers SPARQL queries in the calling process. There is no server, no network protocol and nothing to administer: you link the library, open a store on disk, load Turtle or N-Triples, and run queries.
+Trident is a C++ library that stores RDF data and answers SPARQL queries in the calling process. There is no server, no network protocol and nothing to administer: you link the library, load Turtle or N-Triples, and run queries.
 
 It exists for the cases where a full RDF server is too much machinery. A desktop application, an analysis tool or a data pipeline that needs to ask a handful of graph queries over a local dataset should not have to provision a database.
 
-## Goals
+**No dependencies.** A C++20 compiler and CMake are all that is needed. Nothing is fetched at configure time, there is no package manager step, and the test runner and the timing harness are part of the repository.
 
-- Read and write RDF in Turtle and N-Triples, validated against the W3C syntax test suites.
-- Store triples with dictionary-encoded terms and three permuted indexes, so that every subject/predicate/object binding pattern is served by a sorted prefix scan.
-- Parse SPARQL 1.1 into an algebra tree that matches the operators defined in the specification.
-- Choose join order from index statistics rather than from the order the query happens to be written in.
-- Execute queries as a pipeline of iterators, so a `LIMIT` can stop the work early.
-- Provide RDFS entailment as an optional layer, in both a materialising and a query-time mode, so the tradeoff can be measured instead of assumed.
+## What it does
 
-## Technologies
-
-| Technology | Version or standard | Why |
-| --- | --- | --- |
-| C++ | C++20 | Embeds into a host process with no separate runtime, and gives direct control over data layout, which is what the index design depends on. |
-| CMake | 3.20 or newer | De facto standard for portable C++ builds; consumers can add the library with `add_subdirectory` or `FetchContent`. |
-| RDF | RDF 1.1 | The normative data model: IRIs, literals, blank nodes, graphs. |
-| Turtle, N-Triples | RDF 1.1 | The two interchange syntaxes in scope. N-Triples is a subset of Turtle, so one parser covers both. |
-| SPARQL | SPARQL 1.1 Query | The normative query language. Its algebra is the boundary between parser and execution engine. |
-| RDFS | RDF Schema 1.1 | The entailment rules implemented by the optional inference layer. |
-| Parsers | Hand-written recursive descent | Both grammars need only limited lookahead. Keeps error messages precise and removes a code generation step from the build. |
-| Index storage | Memory-mapped files | The OS handles caching, and reopening an existing store does not rebuild the indexes. |
-| GoogleTest | 1.14 or newer | Unit and integration tests. Fetched only when tests are enabled, so embedding does not pull it in. |
+- Reads Turtle and N-Triples: prefixes and base, literals with language tags and datatypes, blank nodes and `[]`, collections, the `a` keyword, predicate and object lists. N-Triples is the same parser with a strict flag that rejects everything Turtle adds. Writes N-Triples.
+- Interns every IRI, blank node and literal to a 64-bit id, with a reverse dictionary for output.
+- Keeps three permuted indexes over the encoded triples, SPO, POS and OSP, each sorted and searchable by prefix, so every one of the eight binding combinations is served by a prefix of one of them.
+- Parses a subset of SPARQL 1.1 into an algebra tree: `SELECT` with projection and `DISTINCT`, basic graph patterns, `FILTER` with comparison, logical and arithmetic operators and 25 built-in functions, `OPTIONAL`, `UNION`, `ORDER BY`, `LIMIT`, `OFFSET`, and `COUNT`, `SUM`, `MIN`, `MAX`, `AVG` and `SAMPLE` with `GROUP BY`. Everything outside the subset is rejected with a line and a column, never ignored.
+- Plans the join order from the exact cardinality of each pattern, which a prefix search on the index gives in `O(log n)`, and prints the plan it chose. A flag forces the naive left-to-right order so the value of planning can be measured.
+- Executes as a pipeline of iterators: index scan, index nested loop join, merge join, left join, union, filter, projection, distinct, sort, group with aggregation, and slice. Only sorting and grouping materialise, because only they have to.
+- Materialises RDFS entailment: `subClassOf` and `subPropertyOf` including transitivity, `domain` and `range`, applied to a fixed point.
 
 ## Architecture
 
-Six layers, each depending only on the ones below it. Loading runs down the left path: a parser turns text into terms, the dictionary maps terms to fixed-width ids, and the indexes store the encoded triples in three sort orders. Querying runs down the right path: the SPARQL parser produces an algebra tree, the planner fixes the join order and picks an index per pattern, and the execution engine walks the plan. The engine reaches the data through the indexes and nowhere else.
+Layers, each depending only on the ones below it. Loading runs down the left path: a parser turns text into terms, the dictionary maps terms to fixed-width ids, and the indexes store the encoded triples in three sort orders. Querying runs down the right path: the SPARQL parser produces an algebra tree, the planner fixes the join order and picks an index per pattern, and the execution engine walks the plan. The engine reaches the data through the indexes and nowhere else.
 
 ```mermaid
 flowchart TD
@@ -43,33 +32,71 @@ flowchart TD
 
     q[SPARQL query text] --> sparql[SPARQL parser]
     sparql --> alg[Algebra tree]
-    alg --> planner[Planner<br/>join order from index statistics]
+    alg --> planner[Planner<br/>join order from exact cardinalities]
     planner --> exec[Execution engine<br/>iterator pipeline]
     exec --> idx
     exec --> res[Solution sequence]
 
-    rdfs[RDFS inference layer<br/>optional] -.-> idx
-    rdfs -.-> exec
+    rdfs[RDFS materialisation<br/>optional pass] -.-> idx
 ```
 
 ## Build
 
 ```bash
-git clone <this repository>
-cd trident-semantic-web
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DTRIDENT_BUILD_TESTS=ON
-cmake --build build -j
+Ninja is not required; drop `-G Ninja` to use the default generator. To embed the library without its tests or tools:
 
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DTRIDENT_BUILD_TESTS=OFF -DTRIDENT_BUILD_TOOLS=OFF
+cmake --build build
+```
+
+## Run
+
+The demo needs no arguments and downloads nothing. It generates the dataset, loads it, and runs ten queries of increasing complexity, printing the parsed algebra, the chosen plan, the solution count and the elapsed time for each, then compares the planned join order against the naive one and finishes with the RDFS pass.
+
+```bash
+build/trident_demo
+```
+
+`cmake --build build --target demo` builds and runs it in one step.
+
+The tests are registered with CTest as ten entries, one per group, covering 125 individual cases:
+
+```bash
 ctest --test-dir build --output-on-failure
 ```
 
-To embed the library without building its tests:
+The benchmark measures load throughput, index build time, structure size, query latency with the planner on against off, merge join against index nested loop join, and the cost of RDFS materialisation. It prints the solution count next to every timing, because a configuration that returns fewer solutions is faster for a reason that is not speed.
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DTRIDENT_BUILD_TESTS=OFF
-cmake --build build -j
+build/trident_bench --repeats 15
 ```
+
+There is also a command line front end:
+
+```bash
+build/trident_cli data/small.ttl --plan -q "PREFIX ex: <http://example.org/>
+SELECT ?n WHERE { ?p a ex:Author . ?p ex:name ?n }"
+
+build/trident_cli --generate 5000 --rdfs -q "SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }"
+```
+
+Run `build/trident_cli --help` for the full option list.
+
+## Layout
+
+| Path | Contents |
+| --- | --- |
+| `include/trident/` | public headers, one per layer |
+| `src/` | implementation |
+| `tools/` | `trident_demo`, `trident_bench`, `trident_cli` |
+| `tests/` | the assert-based runner and ten test groups |
+| `data/` | `small.ttl` and `small.nt`, the hand-checked graphs the tests assert against |
+| `docs/` | the project report and the raw benchmark output |
 
 ## Documentation
 
@@ -80,7 +107,7 @@ cd docs
 latexmk -pdf Main.tex
 ```
 
-The output is `docs/build/Main.pdf`. Unfilled facts are marked in the source and can be listed with:
+The output is `docs/build/Main.pdf`. The raw output of the benchmark runs quoted in the report is kept in `docs/measurements/`. Unfilled facts are marked in the source and can be listed with:
 
 ```bash
 grep -rn 'TODO' docs/chapters docs/Main.tex docs/references.bib
@@ -88,23 +115,22 @@ grep -rn 'TODO' docs/chapters docs/Main.tex docs/references.bib
 
 ## Status
 
-Scaffold only. Nothing is implemented yet.
-
-- [x] Repository layout and build documentation
-- [x] Report skeleton with chapter structure and title page
-- [x] Bibliography of primary specifications and reference papers
-- [ ] CMake build files
-- [ ] Term dictionary
-- [ ] Turtle and N-Triples parser
-- [ ] Turtle and N-Triples serialiser
-- [ ] Permuted index storage and memory mapping
-- [ ] SPARQL parser and algebra tree
-- [ ] Query planner
-- [ ] Execution engine
-- [ ] RDFS inference layer
-- [ ] W3C test suite harness
-- [ ] Performance measurements against reference implementations
-- [ ] Results and conclusion chapters filled in
+- [x] CMake build with no external dependencies
+- [x] Term dictionary with 64-bit encoded identifiers
+- [x] Turtle and N-Triples parser
+- [x] N-Triples serialiser
+- [x] Three permuted indexes with prefix search and exact cardinalities
+- [x] SPARQL parser and algebra tree
+- [x] Query planner with a switch for the naive order
+- [x] Execution engine: index scan, index nested loop join, merge join, left join, union, filter, distinct, sort, group with aggregation, slice
+- [x] RDFS materialisation
+- [x] Locally written syntax corpus, 101 cases, plus hand-checked query answers
+- [x] Benchmark and measured results in the report
+- [ ] Memory-mapped index files, so a store can be reopened without rebuilding
+- [ ] Index compression
+- [ ] RDFS entailment at query time, as the second mode
+- [ ] Named graphs and quads
+- [ ] Comparison against Apache Jena and RDFLib
 
 ## License
 

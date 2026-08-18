@@ -1,0 +1,49 @@
+﻿Trident benchmark
+repeats 15, warmup runs discarded 2, median reported
+
+Loading and index build
+------------------------------------------------------------------------------
+papers    triples    bytes      parse ms   triples/s   build ms   KiB       terms
+------------------------------------------------------------------------------
+1000      10462      301893     14.2       735952      2.3        1827      2135
+5000      52395      1528499    71.6       732318      13.0       7024      7614
+20000     209202     6185046    231.0      905522      44.2       28032     27565
+50000     522910     15546537   490.0      1067218     116.3      72123     67501
+
+Query latency, planner on against off (209202 triples)
+------------------------------------------------------------------------------
+query                                           planned ms  naive ms    ratio    solutions
+------------------------------------------------------------------------------
+B1 single pattern, bound predicate              1.398       1.612       1.15     20000
+B2 star join, two patterns                      5.856       5.704       0.97     20000
+B3 four pattern chain, one selective constant   0.027       11.182      414.14   47
+B4 five pattern chain, two selective constants  0.026       11.279      428.87   0
+B5 filter over a numeric literal                71.832      69.019      0.96     3188
+B6 optional                                     1.347       1.352       1.00     4000
+B7 group by with count                          2.675       2.624       0.98     200
+B8 order by over the whole relation             14.533      14.591      1.00     20000
+
+Join strategy on the shape where both inputs arrive sorted
+------------------------------------------------------------------------------
+merge join                    9.149       99996 solutions
+index nested loop join        10.042      99996 solutions
+
+Selectivity of the leading pattern against total work
+------------------------------------------------------------------------------
+leading constant              cardinality   planned ms  solutions
+ex:org1                       4             0.020       29
+ex:org3                       11            0.026       47
+ex:org5                       5             0.021       30
+
+RDFS materialisation
+------------------------------------------------------------------------------
+triples before        209202
+triples inferred      68398
+triples after         277600
+rounds to fixpoint    2
+pass, single run ms   157.5
+load and pass, median 372.6 ms
+structures before KiB 28032
+structures after KiB  38985
+
+done.
