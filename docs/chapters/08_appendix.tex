@@ -1,265 +1,93 @@
 % ПРИЛОЖЕНИЯ, без номер.
-% По А.3: изходен текст на програми, формати на структури от данни, екранни
-% форми, получени резултати. Използват се \subsection* без номер, за да не се
-% продължи номерацията на параграфите от Раздел VI.
+% Изходният текст НЕ се вмъква тук. Приложение А сочи към хранилището.
 \section*{ПРИЛОЖЕНИЯ}
 \label{sec:appendix}
 \addcontentsline{toc}{section}{ПРИЛОЖЕНИЯ}
 
-\subsection*{Приложение А. Представяне на индексите}
+\subsection*{Приложение А. Изходен текст и стартиране}
 
-Всеки индекс е непрекъсната редица от записи по 24 байта, подредена лексикографски по
-своята пермутация. Записът е три 64 битови идентификатора в реда подлог, сказуемо,
-допълнение; пермутацията определя реда на сравнение, а не реда на съхранение, така че
-трите индекса имат едно и също оформление на записа и се различават само по подредба.
+Целият изходен текст, тестовете, измерителната програма и този отчет са в публичното хранилище
+\url{https://github.com/Alex-Tsvetanov/trident}. Той не е вмъкнат тук, защото се чете по-добре
+в редактор, отколкото на хартия. Всеки ред в \tabref{tab:modules} е двойка заглавен файл в
+\code{include/trident/} и файл с реализация в \code{src/}.
 
 \begin{table}[H]
-\caption{Оформление на един запис в индекс}
-\label{tab:index-record}
+\caption{Модули на реализацията, отговорност и обем}
+\label{tab:modules}
 \centering
-\fontsize{10}{12}\selectfont
-\begin{tabular}{@{}rrL{7.6cm}@{}}
+\fontsize{9}{11}\selectfont
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{2.9cm}L{8.5cm}r@{}}
 \toprule
-\textbf{Отместване} & \textbf{Размер} & \textbf{Съдържание} \\
+\textbf{Модул} & \textbf{Отговорност} & \textbf{Редове} \\
 \midrule
-0  & 8 & идентификатор на подлога \\
-8  & 8 & идентификатор на сказуемото \\
-16 & 8 & идентификатор на допълнението \\
+\code{term}, \code{dictionary} & термин, 64 битов идентификатор, двупосочно съпоставяне & 272 \\
+\code{store}      & кодирани триплети, трите индекса, търсене по префикс, точни мощности & 258 \\
+\code{lexer}, \code{turtle} & четец на знаци и термини, анализатор на Turtle и N-Triples & 869 \\
+\code{sparql\_ast}, \code{sparql\_parser} & алгебрично дърво и рекурсивното спускане към него & 992 \\
+\code{expression} & изчисляване на изрази във филтри и подредбата за сортиране & 523 \\
+\code{planner}    & номериране на променливите, ред на съединенията, избор на стратегия & 310 \\
+\code{exec}       & операторите на механизма за изпълнение & 883 \\
+\code{rdfs}       & материализация по правилата на RDFS & 195 \\
+\code{query}, \code{generator} & лицева функция и детерминиран генератор на набора & 331 \\
+\code{tools/}     & \code{trident\_demo}, \code{trident\_bench}, \code{trident\_cli} & 596 \\
+\code{tests/}     & собствена рамка и десет тестови групи, 125 случая & 1\,906 \\
+\midrule
+\textbf{Общо} & & \textbf{7\,135} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Пермутациите са SPO с ред на сравнение $(0,1,2)$, POS с ред $(1,2,0)$ и OSP с ред
-$(2,0,1)$. Редиците се държат в оперативната памет и се изграждат наново при отваряне;
-двоичен формат на диска и признак за версия няма, тъй като запазването на хранилището
-между стартирания остава извън обхвата.
-
-\subsection*{Приложение Б. Представяне на речника}
-
-Речникът поддържа две структури. Правата посока е хеш таблица от каноничния запис на
-термина в N-Triples към идентификатор. Обратната посока е вектор от записи на термини,
-индексиран с пореден номер минус едно.
-
-Идентификаторът е 64 бита: старши 8 бита за вида на термина и младши 56 бита за пореден
-номер. Видовете са 1 за IRI, 2 за празен възел и 3 за литерал. Стойността нула е
-запазена за „няма свързване“ и не се раздава, затова поредните номера започват от 1.
-
-Записът на термина съдържа вида, лексикалната форма, езиковия етикет и типа на данните.
-Литерал без явен тип получава \code{xsd:string}, а литерал с езиков етикет получава
-\code{rdf:langString}, както изисква RDF 1.1. Затова две различни изписвания на един и
-същ термин се вписват в речника само веднъж.
-
-\subsection*{Приложение В. Поддържано подмножество на SPARQL}
-
-\textbf{Разпознава се:} обявявания \code{PREFIX} и \code{BASE}; \code{SELECT} с изброени
-променливи или \code{*}; \code{DISTINCT} и \code{REDUCED}; базови графови шаблони със
-съкратени списъци по сказуемо и по допълнение и с ключовата дума \code{a}; литерали с
-езиков етикет и с тип, числови и булеви литерали; празни възли във вид \code{\_:етикет} и
-\code{[]}; вложени групи; \code{OPTIONAL}; \code{UNION}; \code{FILTER};
-\code{GROUP BY} по променливи; агрегиращите функции \code{COUNT}, \code{SUM},
-\code{MIN}, \code{MAX}, \code{AVG} и \code{SAMPLE}, със и без \code{DISTINCT}, включително
-\code{COUNT(*)}; \code{ORDER BY} с \code{ASC} и \code{DESC}; \code{LIMIT} и \code{OFFSET}.
-
-\textbf{В изразите се разпознават:} \code{||}, \code{\&\&}, \code{=}, \code{!=},
-\code{<}, \code{>}, \code{<=}, \code{>=}, \code{+}, \code{-}, \code{*}, \code{/}, унарни
-\code{!} и \code{-}; и функциите \code{BOUND}, \code{STR}, \code{LANG}, \code{DATATYPE},
-\code{isIRI}, \code{isURI}, \code{isLITERAL}, \code{isBLANK}, \code{isNUMERIC},
-\code{STRLEN}, \code{UCASE}, \code{LCASE}, \code{CONTAINS}, \code{STRSTARTS},
-\code{STRENDS}, \code{SUBSTR}, \code{REGEX}, \code{ABS}, \code{CEIL}, \code{FLOOR},
-\code{ROUND}, \code{IF}, \code{COALESCE}, \code{sameTerm} и \code{LANGMATCHES}.
-
-\textbf{Отхвърля се с изрична грешка:} \code{ASK}, \code{CONSTRUCT}, \code{DESCRIBE},
-\code{GRAPH}, \code{SERVICE}, \code{MINUS}, \code{BIND}, \code{VALUES}, \code{HAVING},
-подзаявки, пътища по свойства, \code{GROUP BY} по израз, както и всяко име на функция
-извън списъка по-горе. Всеки от тези случаи има отрицателен запис в набора от синтактични
-случаи, тоест границата на подмножеството е проверявана, а не само описана.
-
-\clearpage
-\subsection*{Приложение Г. Изходен текст на избрани модули}
-
-Изборът на индекс по свързаните позиции на шаблона. Функцията брои колко водещи позиции
-на всяка пермутация са свързани и връща пермутацията с най-дълъг такъв префикс.
-
-\begin{lstlisting}[caption={Избор на индекс, src/store.cpp}]
-IndexChoice choose_index(const EncodedPattern& pattern) {
-    const IndexOrder orders[3] = {IndexOrder::Spo, IndexOrder::Pos, IndexOrder::Osp};
-    IndexChoice best;
-    best.prefix_len = -1;
-    for (IndexOrder order : orders) {
-        const std::array<int, 3> perm = permutation_of(order);
-        int len = 0;
-        while (len < 3 && pattern.bound(perm[len])) ++len;
-        if (len > best.prefix_len) {
-            best.order = order;
-            best.prefix_len = len;
-        }
-    }
-    return best;
-}
-\end{lstlisting}
-
-Отварянето на обхождане по индекс. Позициите, свързани от обхващащия оператор, се вливат
-в ключа за търсене, което превръща вложения цикъл в съединяване по индекс.
-
-\begin{lstlisting}[caption={Отваряне на обхождане, src/exec.cpp}]
-void IndexScan::open(const Row& input) {
-    input_ = input;
-    rows_produced_ = 0;
-    cursor_ = end_ = 0;
-    if (pattern_.impossible) return;
-
-    EncodedPattern effective;
-    TermId parts[3];
-    for (int i = 0; i < 3; ++i) {
-        parts[i] = pattern_.constant[i];
-        if (!parts[i].valid() && pattern_.slot[i] >= 0) {
-            TermId bound = input_[static_cast<std::size_t>(pattern_.slot[i])];
-            if (bound.valid()) parts[i] = bound;
-        }
-    }
-    effective.s = parts[0];
-    effective.p = parts[1];
-    effective.o = parts[2];
-
-    IndexChoice choice = choose_index(effective);
-    index_ = &store_.index(choice.order);
-    PermutedIndex::Range range =
-        index_->prefix_range(Triple{effective.s, effective.p, effective.o}, choice.prefix_len);
-    cursor_ = range.begin;
-    end_ = range.end;
-}
-\end{lstlisting}
-
-Лакомият избор на ред на съединенията. Предпочита се шаблон, свързан с вече избраните, а
-измежду тях този с най-малка мощност.
-
-\begin{lstlisting}[caption={Ред на съединенията, src/planner.cpp}]
-std::vector<std::size_t> order_patterns(const std::vector<CompiledPattern>& patterns,
-                                        const std::vector<std::size_t>& cardinalities) {
-    std::vector<std::size_t> order;
-    if (options_.naive_join_order) {
-        for (std::size_t i = 0; i < patterns.size(); ++i) order.push_back(i);
-        return order;
-    }
-    std::vector<bool> used(patterns.size(), false);
-    std::vector<int> bound;
-    for (std::size_t step = 0; step < patterns.size(); ++step) {
-        std::size_t best = patterns.size();
-        bool best_connected = false;
-        for (std::size_t i = 0; i < patterns.size(); ++i) {
-            if (used[i]) continue;
-            bool connected = !bound.empty() && shares_variable(patterns[i], bound);
-            if (best == patterns.size()) {
-                best = i;
-                best_connected = connected;
-                continue;
-            }
-            if (connected != best_connected) {
-                if (connected) { best = i; best_connected = true; }
-                continue;
-            }
-            if (cardinalities[i] < cardinalities[best]) best = i;
-        }
-        used[best] = true;
-        order.push_back(best);
-        pattern_variables(patterns[best], bound);
-    }
-    return order;
-}
-\end{lstlisting}
-
-Съединяване чрез сливане. Буферира се само групата редове отдясно с равен ключ, след което
-тя се преизползва, докато ключът отляво не се смени.
-
-\begin{lstlisting}[caption={Сливане на два подредени входа, src/exec.cpp}]
-bool MergeJoin::next(Row& out) {
-    const std::size_t slot = static_cast<std::size_t>(join_slot_);
-    for (;;) {
-        if (block_active_) {
-            if (block_cursor_ < right_block_.size()) {
-                const Row& right = right_block_[block_cursor_++];
-                out = left_row_;
-                for (std::size_t i = 0; i < out.size(); ++i) {
-                    if (!out[i].valid()) out[i] = right[i];
-                }
-                ++rows_produced_;
-                return true;
-            }
-            left_valid_ = advance_left();
-            block_cursor_ = 0;
-            if (!left_valid_ || right_block_.empty() ||
-                left_row_[slot] != right_block_.front()[slot]) {
-                block_active_ = false;
-                right_block_.clear();
-            }
-            continue;
-        }
-        if (!left_valid_ || !right_valid_) return false;
-        TermId lk = left_row_[slot];
-        TermId rk = right_row_[slot];
-        if (lk < rk) { left_valid_ = advance_left(); continue; }
-        if (rk < lk) { right_valid_ = advance_right(); continue; }
-        right_block_.clear();
-        while (right_valid_ && right_row_[slot] == lk) {
-            right_block_.push_back(right_row_);
-            right_valid_ = advance_right();
-        }
-        block_cursor_ = 0;
-        block_active_ = true;
-    }
-}
-\end{lstlisting}
-
-\subsection*{Приложение Д. Заявки, използвани при измерванията}
-
-Всички заявки започват с \code{PREFIX ex: <http://example.org/>}, който е пропуснат
-по-долу заради мястото.
-
-\begin{lstlisting}[language={},caption={Работно натоварване}]
-B1  SELECT ?p ?t WHERE { ?p ex:title ?t }
-
-B2  SELECT ?t ?y WHERE { ?p ex:title ?t . ?p ex:year ?y }
-
-B3  SELECT ?t ?n WHERE { ?p ex:title ?t . ?p ex:mainAuthor ?a .
-                        ?a ex:name ?n . ?a ex:affiliation ex:org3 }
-
-B4  SELECT ?t ?n WHERE { ?p ex:title ?t . ?p ex:mainAuthor ?a .
-                        ?a ex:name ?n . ?a ex:affiliation ex:org3 .
-                        ?p ex:venue ex:venue2 }
-
-B5  SELECT ?p WHERE { ?p ex:citationCount ?c FILTER (?c > 100) }
-
-B6  SELECT ?n ?h WHERE { ?a a ex:Author . ?a ex:name ?n
-                        OPTIONAL { ?a ex:homepage ?h } }
-
-B7  SELECT ?v (COUNT(?p) AS ?n) WHERE { ?p ex:venue ?v } GROUP BY ?v
-
-B8  SELECT ?p WHERE { ?p ex:citationCount ?c } ORDER BY DESC(?c)
-
-Заявка за стратегията на съединяване:
-    SELECT ?a ?first ?second WHERE { ?first ex:mainAuthor ?a .
-                                     ?second ex:author ?a }
-\end{lstlisting}
-
-\subsection*{Приложение Е. Указания за изграждане и стартиране}
-
-Изисква се компилатор за C++20 и CMake 3.20 или по-нов. Външни зависимости няма и по време
-на конфигуриране не се тегли нищо. Командите по-долу са изпълнени на машината от
-\tabref{tab:machine} и са възпроизведени дословно в \code{README.md} на хранилището.
+Изисква се компилатор за C++20 и CMake 3.20 или по-нов. Външни зависимости няма и по време на
+конфигуриране не се тегли нищо. \code{ctest} докладва 10 записа и 125 отделни случая, а
+\code{trident\_demo} зарежда генерирания набор, изпълнява десет заявки и за всяка отпечатва
+алгебричното дърво, избрания план, броя решения и изтеклото време.
 
 \begin{lstlisting}[language={},caption={Изграждане, тестове, демонстрация и измервания}]
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
-
 build/trident_demo
 build/trident_bench --repeats 15
-
-cd docs && latexmk -pdf Main.tex
 \end{lstlisting}
 
-Изпълнението на \code{ctest} докладва 10 записа, съответстващи на групите от
-\tabref{tab:testgroups}, и 125 отделни случая. Демонстрационната програма генерира набора
-от данни, зарежда го, изпълнява десет заявки с нарастваща сложност и за всяка отпечатва
-алгебричното дърво, избрания план, броя решения и изтеклото време, след което сравнява
-планирания с наивния ред и накрая прилага прохода по RDFS.
+\subsection*{Приложение Б. Поддържано подмножество на SPARQL}
+
+\textbf{Разпознава се:} \code{PREFIX} и \code{BASE}; \code{SELECT} с изброени променливи или
+\code{*}; \code{DISTINCT} и \code{REDUCED}; базови графови шаблони със съкратени списъци и с
+ключовата дума \code{a}; литерали с езиков етикет и с тип; празни възли във вид
+\code{\_:етикет} и \code{[]}; вложени групи; \code{OPTIONAL}; \code{UNION}; \code{FILTER};
+\code{GROUP BY} по променливи; \code{COUNT}, \code{SUM}, \code{MIN}, \code{MAX}, \code{AVG} и
+\code{SAMPLE}, със и без \code{DISTINCT}; \code{ORDER BY}, \code{LIMIT} и \code{OFFSET}. В
+изразите: \code{||}, \code{\&\&}, шестте сравнения, четирите аритметични операции, унарни
+\code{!} и \code{-}, и 25 функции, сред които \code{BOUND}, \code{STR}, \code{DATATYPE},
+\code{isIRI}, \code{STRLEN}, \code{CONTAINS}, \code{SUBSTR}, \code{REGEX} и \code{COALESCE}.
+
+\textbf{Отхвърля се с изрична грешка:} \code{ASK}, \code{CONSTRUCT}, \code{DESCRIBE},
+\code{GRAPH}, \code{SERVICE}, \code{MINUS}, \code{BIND}, \code{VALUES}, \code{HAVING},
+подзаявки, пътища по свойства, \code{GROUP BY} по израз и всяко име на функция извън списъка.
+Всеки от тези случаи има отрицателен запис в набора от синтактични случаи, тоест границата на
+подмножеството е проверявана, а не само описана.
+
+\subsection*{Приложение В. Заявки, използвани при измерванията}
+
+Всички заявки започват с \code{PREFIX ex: <http://example.org/>}, пропуснат по-долу.
+
+\begin{lstlisting}[language={},caption={Работно натоварване}]
+B1  SELECT ?p ?t WHERE { ?p ex:title ?t }
+B2  SELECT ?t ?y WHERE { ?p ex:title ?t . ?p ex:year ?y }
+B3  SELECT ?t ?n WHERE { ?p ex:title ?t . ?p ex:mainAuthor ?a .
+                        ?a ex:name ?n . ?a ex:affiliation ex:org3 }
+B4  SELECT ?t ?n WHERE { ?p ex:title ?t . ?p ex:mainAuthor ?a .
+                        ?a ex:name ?n . ?a ex:affiliation ex:org3 .
+                        ?p ex:venue ex:venue2 }
+B5  SELECT ?p WHERE { ?p ex:citationCount ?c FILTER (?c > 100) }
+B6  SELECT ?n ?h WHERE { ?a a ex:Author . ?a ex:name ?n
+                        OPTIONAL { ?a ex:homepage ?h } }
+B7  SELECT ?v (COUNT(?p) AS ?n) WHERE { ?p ex:venue ?v } GROUP BY ?v
+B8  SELECT ?p WHERE { ?p ex:citationCount ?c } ORDER BY DESC(?c)
+
+Стратегия на съединяване:
+    SELECT ?a ?first ?second WHERE { ?first ex:mainAuthor ?a .
+                                     ?second ex:author ?a }
+\end{lstlisting}
