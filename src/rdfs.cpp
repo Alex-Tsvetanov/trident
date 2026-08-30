@@ -1,8 +1,6 @@
 #include "trident/rdfs.hpp"
 
-#include <unordered_map>
 #include <unordered_set>
-#include <vector>
 
 namespace trident {
 
@@ -10,8 +8,6 @@ namespace {
 
 struct TripleHash {
     std::size_t operator()(const Triple& t) const noexcept {
-        // A cheap mix. The identifiers are dense small integers, so shifting one
-        // of them keeps subject and object from cancelling out.
         std::size_t h = static_cast<std::size_t>(t.s.raw());
         h = h * 1000003u + static_cast<std::size_t>(t.p.raw());
         h = h * 1000003u + static_cast<std::size_t>(t.o.raw());
@@ -29,9 +25,6 @@ void insert_unique(std::vector<TermId>& list, TermId value) {
     list.push_back(value);
 }
 
-// Transitive closure of a small relation, by repeated composition. The schema
-// part of an RDF graph is tiny compared with the data, so the simple algorithm
-// is the right one here.
 void close_transitively(Relation& relation) {
     bool changed = true;
     while (changed) {
@@ -62,6 +55,89 @@ void close_transitively(Relation& relation) {
 
 }  // namespace
 
+std::vector<TermId> RdfsSchema::lookup(const Relation& relation, TermId key) const {
+    auto it = relation.find(key.raw());
+    if (it == relation.end()) return {};
+    return it->second;
+}
+
+RdfsSchema::RdfsSchema(TripleStore& store) {
+    Dictionary& dict = store.dictionary();
+    TermId sub_class = dict.intern(Term::iri(std::string(rdfs_iri::kSubClassOf)));
+    TermId sub_property = dict.intern(Term::iri(std::string(rdfs_iri::kSubPropertyOf)));
+    TermId domain = dict.intern(Term::iri(std::string(rdfs_iri::kDomain)));
+    TermId range = dict.intern(Term::iri(std::string(rdfs_iri::kRange)));
+    type_ = dict.intern(Term::iri(std::string(rdfs_iri::kType)));
+
+    const PermutedIndex& spo = store.index(IndexOrder::Spo);
+    for (std::size_t i = 0; i < spo.size(); ++i) {
+        const Triple& t = spo[i];
+        if (sub_class.valid() && t.p == sub_class) insert_unique(super_class_[t.s.raw()], t.o);
+        else if (sub_property.valid() && t.p == sub_property) {
+            insert_unique(super_property_[t.s.raw()], t.o);
+        } else if (domain.valid() && t.p == domain) {
+            insert_unique(domain_of_[t.s.raw()], t.o);
+        } else if (range.valid() && t.p == range) {
+            insert_unique(range_of_[t.s.raw()], t.o);
+        }
+    }
+    close_transitively(super_class_);
+    close_transitively(super_property_);
+
+    for (const auto& entry : super_class_) {
+        TermId child(entry.first);
+        for (TermId parent : entry.second) insert_unique(sub_class_[parent.raw()], child);
+    }
+    for (const auto& entry : super_property_) {
+        TermId child(entry.first);
+        for (TermId parent : entry.second) insert_unique(sub_property_[parent.raw()], child);
+    }
+}
+
+std::vector<TermId> RdfsSchema::properties_entailing(TermId property) const {
+    std::vector<TermId> out = lookup(sub_property_, property);
+    insert_unique(out, property);
+    return out;
+}
+
+std::vector<TermId> RdfsSchema::classes_entailing(TermId klass) const {
+    std::vector<TermId> out = lookup(sub_class_, klass);
+    insert_unique(out, klass);
+    return out;
+}
+
+std::vector<TermId> RdfsSchema::properties_with_domain(TermId klass) const {
+    std::vector<TermId> classes = classes_entailing(klass);
+    std::vector<TermId> out;
+    for (const auto& entry : domain_of_) {
+        for (TermId declared : entry.second) {
+            for (TermId c : classes) {
+                if (declared == c) {
+                    insert_unique(out, TermId(entry.first));
+                    break;
+                }
+            }
+        }
+    }
+    return out;
+}
+
+std::vector<TermId> RdfsSchema::properties_with_range(TermId klass) const {
+    std::vector<TermId> classes = classes_entailing(klass);
+    std::vector<TermId> out;
+    for (const auto& entry : range_of_) {
+        for (TermId declared : entry.second) {
+            for (TermId c : classes) {
+                if (declared == c) {
+                    insert_unique(out, TermId(entry.first));
+                    break;
+                }
+            }
+        }
+    }
+    return out;
+}
+
 RdfsStats materialise_rdfs(TripleStore& store) {
     if (!store.built()) store.build();
 
@@ -69,8 +145,6 @@ RdfsStats materialise_rdfs(TripleStore& store) {
     stats.before = store.triple_count();
 
     Dictionary& dict = store.dictionary();
-    // The vocabulary terms are interned so that they have identifiers even in a
-    // graph that never mentions them; the lookups below then need no special case.
     const TermId sub_class = dict.intern(Term::iri(std::string(rdfs_iri::kSubClassOf)));
     const TermId sub_property = dict.intern(Term::iri(std::string(rdfs_iri::kSubPropertyOf)));
     const TermId domain = dict.intern(Term::iri(std::string(rdfs_iri::kDomain)));
@@ -104,7 +178,6 @@ RdfsStats materialise_rdfs(TripleStore& store) {
             if (known.insert(candidate).second) fresh.push_back(candidate);
         };
 
-        // rdfs11 and rdfs5: the closure computed above, written back as triples.
         for (const auto& entry : subclass) {
             for (TermId target : entry.second) {
                 propose(Triple{TermId(entry.first), sub_class, target});
@@ -119,12 +192,10 @@ RdfsStats materialise_rdfs(TripleStore& store) {
         const std::size_t scanned = all.size();
         for (std::size_t i = 0; i < scanned; ++i) {
             const Triple t = all[i];
-            // rdfs7: a triple on a subproperty also holds on the superproperty.
             auto super = subproperty.find(t.p.raw());
             if (super != subproperty.end()) {
                 for (TermId p2 : super->second) propose(Triple{t.s, p2, t.o});
             }
-            // rdfs2 and rdfs3: domain and range give types to subject and object.
             auto dom = domain_of.find(t.p.raw());
             if (dom != domain_of.end()) {
                 for (TermId c : dom->second) propose(Triple{t.s, type, c});
@@ -133,7 +204,6 @@ RdfsStats materialise_rdfs(TripleStore& store) {
             if (ran != range_of.end()) {
                 for (TermId c : ran->second) propose(Triple{t.o, type, c});
             }
-            // rdfs9: a type is also every superclass of that type.
             if (t.p == type) {
                 auto up = subclass.find(t.o.raw());
                 if (up != subclass.end()) {
@@ -146,9 +216,6 @@ RdfsStats materialise_rdfs(TripleStore& store) {
         all.insert(all.end(), fresh.begin(), fresh.end());
         stats.inferred += fresh.size();
         for (const Triple& t : fresh) store.add(t);
-        // Guard against a rule set that fails to reach a fixed point. With this
-        // subset it cannot happen, but a silent infinite loop is the worst way to
-        // find out otherwise.
         if (stats.rounds > 64) break;
     }
 

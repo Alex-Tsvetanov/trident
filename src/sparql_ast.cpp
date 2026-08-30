@@ -128,6 +128,9 @@ std::string algebra_to_string(const Algebra& algebra, int indent) {
             } else if constexpr (std::is_same_v<T, FilterNode>) {
                 return p + "Filter " + expr_to_string(*node.condition) + "\n" +
                        algebra_to_string(*node.child, indent + 1);
+            } else if constexpr (std::is_same_v<T, GraphNode>) {
+                return p + "Graph " + node.graph.to_string() + "\n" +
+                       algebra_to_string(*node.child, indent + 1);
             } else if constexpr (std::is_same_v<T, GroupNode>) {
                 std::string out = p + "Group by [" + join_list(node.keys) + "]";
                 for (const Aggregate& agg : node.aggregates) {
@@ -184,6 +187,9 @@ void collect_algebra_variables(const Algebra& algebra, std::vector<std::string>&
             } else if constexpr (std::is_same_v<T, FilterNode>) {
                 collect_algebra_variables(*node.child, out);
                 collect_expr_variables(*node.condition, out);
+            } else if constexpr (std::is_same_v<T, GraphNode>) {
+                if (node.graph.is_variable) push(node.graph.variable);
+                collect_algebra_variables(*node.child, out);
             } else if constexpr (std::is_same_v<T, GroupNode>) {
                 collect_algebra_variables(*node.child, out);
                 for (const Aggregate& agg : node.aggregates) push(agg.out_variable);

@@ -26,10 +26,17 @@ struct TurtleOptions {
 };
 
 using TripleSink = std::function<void(const Term&, const Term&, const Term&)>;
+using QuadSink =
+    std::function<void(const Term& s, const Term& p, const Term& o, const Term* graph)>;
 
 // Parses the text and hands every triple to the sink. Throws ParseError with a
 // line and a column on the first syntax error, having emitted nothing further.
 std::size_t parse_turtle(std::string_view text, const TripleSink& sink,
+                         const TurtleOptions& options = {});
+
+// N-Quads: N-Triples plus an optional fourth IRI or blank node naming the graph.
+// A line with three terms goes to the default graph (graph pointer is null).
+std::size_t parse_nquads(std::string_view text, const QuadSink& sink,
                          const TurtleOptions& options = {});
 
 // Convenience wrappers. Both stage triples in the store; the caller still has to
@@ -37,6 +44,10 @@ std::size_t parse_turtle(std::string_view text, const TripleSink& sink,
 std::size_t load_turtle(TripleStore& store, std::string_view text,
                         const TurtleOptions& options = {});
 std::size_t load_turtle_file(TripleStore& store, const std::string& path,
+                             const TurtleOptions& options = {});
+std::size_t load_nquads(TripleStore& store, std::string_view text,
+                        const TurtleOptions& options = {});
+std::size_t load_nquads_file(TripleStore& store, const std::string& path,
                              const TurtleOptions& options = {});
 
 // Reads a whole file into memory. Throws std::runtime_error when it cannot.

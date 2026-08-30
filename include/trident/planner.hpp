@@ -21,6 +21,9 @@ struct PlanOptions {
     // where both are index scans. Turning it off falls back to index nested loop
     // join everywhere, which is the other half of the same measurement.
     bool enable_merge_join = true;
+    // Applies RDFS rules while scanning, without inserting entailed triples into
+    // the store. Orthogonal to materialise_rdfs(): either mode, both, or neither.
+    bool rdfs_query_time = false;
 };
 
 struct Plan {

@@ -146,9 +146,13 @@ TEST(sparql_parser, unknown_function_is_rejected) {
 }
 
 TEST(sparql_parser, unsupported_constructs_are_rejected_explicitly) {
-    CHECK_THROWS(parse_sparql("SELECT ?s WHERE { GRAPH ?g { ?s ?p ?o } }"), ParseError);
     CHECK_THROWS(parse_sparql("SELECT ?s WHERE { ?s ?p ?o } HAVING (COUNT(?o) > 1)"), ParseError);
     CHECK_THROWS(parse_sparql("SELECT ?s WHERE { ?s ?p ?o BIND (1 AS ?x) }"), ParseError);
+}
+
+TEST(sparql_parser, graph_clause_is_accepted) {
+    Query query = parse_sparql("SELECT ?s WHERE { GRAPH ?g { ?s ?p ?o } }");
+    CHECK(query.root != nullptr);
 }
 
 TEST(sparql_parser, syntax_errors_carry_a_position) {

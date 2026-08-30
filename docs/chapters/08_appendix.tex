@@ -22,24 +22,24 @@
 \textbf{Модул} & \textbf{Отговорност} & \textbf{Редове} \\
 \midrule
 \code{term}, \code{dictionary} & термин, 64 битов идентификатор, двупосочно съпоставяне & 272 \\
-\code{store}      & кодирани триплети, трите индекса, търсене по префикс, точни мощности & 258 \\
-\code{lexer}, \code{turtle} & четец на знаци и термини, анализатор на Turtle и N-Triples & 869 \\
-\code{sparql\_ast}, \code{sparql\_parser} & алгебрично дърво и рекурсивното спускане към него & 992 \\
+\code{store}, \code{codec} & индекси, mmap/сгъване, именувани графи, търсене по префикс & 872 \\
+\code{lexer}, \code{turtle} & четец на знаци и термини, Turtle, N-Triples и N-Quads & 986 \\
+\code{sparql\_ast}, \code{sparql\_parser} & алгебрично дърво и рекурсивното спускане към него & 1\,021 \\
 \code{expression} & изчисляване на изрази във филтри и подредбата за сортиране & 523 \\
-\code{planner}    & номериране на променливите, ред на съединенията, избор на стратегия & 310 \\
-\code{exec}       & операторите на механизма за изпълнение & 883 \\
-\code{rdfs}       & материализация по правилата на RDFS & 195 \\
+\code{planner}    & номериране на променливите, ред на съединенията, RDFS по заявка & 434 \\
+\code{exec}       & операторите на механизма за изпълнение & 1\,034 \\
+\code{rdfs}       & материализация и схема за извеждане по време на заявка & 295 \\
 \code{query}, \code{generator} & лицева функция и детерминиран генератор на набора & 331 \\
-\code{tools/}     & \code{trident\_demo}, \code{trident\_bench}, \code{trident\_cli} & 596 \\
-\code{tests/}     & собствена рамка и десет тестови групи, 125 случая & 1\,906 \\
+\code{tools/}     & \code{trident\_demo}, \code{trident\_bench}, \code{trident\_cli} & 621 \\
+\code{tests/}     & собствена рамка и тринадесет тестови групи, 139 случая & 2\,168 \\
 \midrule
-\textbf{Общо} & & \textbf{7\,135} \\
+\textbf{Общо} & & \textbf{8\,557} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Изисква се компилатор за C++20 и CMake 3.20 или по-нов. Външни зависимости няма и по време на
-конфигуриране не се тегли нищо. \code{ctest} докладва 10 записа и 125 отделни случая, а
+конфигуриране не се тегли нищо. \code{ctest} докладва 13 записа и 139 отделни случая, а
 \code{trident\_demo} зарежда генерирания набор, изпълнява десет заявки и за всяка отпечатва
 алгебричното дърво, избрания план, броя решения и изтеклото време.
 
@@ -56,7 +56,8 @@ build/trident_bench --repeats 15
 \textbf{Разпознава се:} \code{PREFIX} и \code{BASE}; \code{SELECT} с изброени променливи или
 \code{*}; \code{DISTINCT} и \code{REDUCED}; базови графови шаблони със съкратени списъци и с
 ключовата дума \code{a}; литерали с езиков етикет и с тип; празни възли във вид
-\code{\_:етикет} и \code{[]}; вложени групи; \code{OPTIONAL}; \code{UNION}; \code{FILTER};
+\code{\_:етикет} и \code{[]}; вложени групи; \code{OPTIONAL}; \code{UNION}; \code{GRAPH} с
+IRI или променлива; \code{FILTER};
 \code{GROUP BY} по променливи; \code{COUNT}, \code{SUM}, \code{MIN}, \code{MAX}, \code{AVG} и
 \code{SAMPLE}, със и без \code{DISTINCT}; \code{ORDER BY}, \code{LIMIT} и \code{OFFSET}. В
 изразите: \code{||}, \code{\&\&}, шестте сравнения, четирите аритметични операции, унарни
@@ -64,7 +65,7 @@ build/trident_bench --repeats 15
 \code{isIRI}, \code{STRLEN}, \code{CONTAINS}, \code{SUBSTR}, \code{REGEX} и \code{COALESCE}.
 
 \textbf{Отхвърля се с изрична грешка:} \code{ASK}, \code{CONSTRUCT}, \code{DESCRIBE},
-\code{GRAPH}, \code{SERVICE}, \code{MINUS}, \code{BIND}, \code{VALUES}, \code{HAVING},
+\code{SERVICE}, \code{MINUS}, \code{BIND}, \code{VALUES}, \code{HAVING},
 подзаявки, пътища по свойства, \code{GROUP BY} по израз и всяко име на функция извън списъка.
 Всеки от тези случаи има отрицателен запис в набора от синтактични случаи, тоест границата на
 подмножеството е проверявана, а не само описана.
