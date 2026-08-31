@@ -18,7 +18,9 @@ It exists for the cases where a full RDF server is too much machinery. A desktop
 - Parses a subset of SPARQL 1.1 into an algebra tree: `SELECT` with projection and `DISTINCT`, basic graph patterns, `FILTER` with comparison, logical and arithmetic operators and 25 built-in functions, `OPTIONAL`, `UNION`, `ORDER BY`, `LIMIT`, `OFFSET`, and `COUNT`, `SUM`, `MIN`, `MAX`, `AVG` and `SAMPLE` with `GROUP BY`. Everything outside the subset is rejected with a line and a column, never ignored.
 - Plans the join order from the exact cardinality of each pattern, which a prefix search on the index gives in `O(log n)`, and prints the plan it chose. A flag forces the naive left-to-right order so the value of planning can be measured.
 - Executes as a pipeline of iterators: index scan, index nested loop join, merge join, left join, union, filter, projection, distinct, sort, group with aggregation, and slice. Only sorting and grouping materialise, because only they have to.
-- Materialises RDFS entailment: `subClassOf` and `subPropertyOf` including transitivity, `domain` and `range`, applied to a fixed point.
+- Materialises RDFS entailment: `subClassOf` and `subPropertyOf` including transitivity, `domain` and `range`, applied to a fixed point. The same rules can be applied at query time instead, without writing the inferred triples into the store.
+- Saves the dictionary and the three indexes to a `.trident` file and reopens it without rebuilding. Plain files are memory-mapped; compressed files use delta + variable-byte encoding of each sorted permutation.
+- Stores named graphs as quads. Turtle and N-Triples load into the default graph; N-Quads can name a graph. `GRAPH` in SPARQL selects one named graph or binds a variable to each of them.
 
 ## Architecture
 
@@ -26,9 +28,11 @@ Layers, each depending only on the ones below it. Loading runs down the left pat
 
 ```mermaid
 flowchart TD
-    ttl[Turtle / N-Triples text] --> parser[Syntax layer]
+    ttl[Turtle / N-Triples / N-Quads text] --> parser[Syntax layer]
     parser --> dict[Term dictionary]
-    dict --> idx[(Permuted indexes<br/>SPO / POS / OSP)]
+    dict --> idx[(Permuted indexes<br/>SPO / POS / OSP<br/>default graph and named graphs)]
+    file[.trident file] -.->|mmap or decompress| idx
+    file -.-> dict
 
     q[SPARQL query text] --> sparql[SPARQL parser]
     sparql --> alg[Algebra tree]
@@ -38,6 +42,7 @@ flowchart TD
     exec --> res[Solution sequence]
 
     rdfs[RDFS materialisation<br/>optional pass] -.-> idx
+    rdfsQ[RDFS at query time<br/>second mode] -.-> planner
 ```
 
 ## Build
@@ -64,7 +69,7 @@ build/trident_demo
 
 `cmake --build build --target demo` builds and runs it in one step.
 
-The tests are registered with CTest as ten entries, one per group, covering 125 individual cases:
+The tests are registered with CTest as thirteen entries, one per group, covering 139 individual cases:
 
 ```bash
 ctest --test-dir build --output-on-failure
@@ -83,6 +88,9 @@ build/trident_cli data/small.ttl --plan -q "PREFIX ex: <http://example.org/>
 SELECT ?n WHERE { ?p a ex:Author . ?p ex:name ?n }"
 
 build/trident_cli --generate 5000 --rdfs -q "SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }"
+
+build/trident_cli data/small.ttl --save /tmp/small.trident --plain
+build/trident_cli --open /tmp/small.trident --rdfs-query -q "SELECT ?x WHERE { ?x a <http://example.org/Person> }"
 ```
 
 Run `build/trident_cli --help` for the full option list.
@@ -94,7 +102,7 @@ Run `build/trident_cli --help` for the full option list.
 | `include/trident/` | public headers, one per layer |
 | `src/` | implementation |
 | `tools/` | `trident_demo`, `trident_bench`, `trident_cli` |
-| `tests/` | the assert-based runner and ten test groups |
+| `tests/` | the assert-based runner and thirteen test groups |
 | `data/` | `small.ttl` and `small.nt`, the hand-checked graphs the tests assert against |
 | `docs/` | the project report and the raw benchmark output |
 
@@ -124,13 +132,15 @@ grep -rn 'TODO' docs/chapters docs/Main.tex docs/references.bib
 - [x] Query planner with a switch for the naive order
 - [x] Execution engine: index scan, index nested loop join, merge join, left join, union, filter, distinct, sort, group with aggregation, slice
 - [x] RDFS materialisation
-- [x] Locally written syntax corpus, 101 cases, plus hand-checked query answers
+- [x] Locally written syntax corpus, 103 cases, plus hand-checked query answers
 - [x] Benchmark and measured results in the report
-- [ ] Memory-mapped index files, so a store can be reopened without rebuilding
-- [ ] Index compression
-- [ ] RDFS entailment at query time, as the second mode
-- [ ] Named graphs and quads
+- [x] Memory-mapped index files, so a store can be reopened without rebuilding
+- [x] Index compression
+- [x] RDFS entailment at query time, as the second mode
+- [x] Named graphs and quads
 - [ ] Comparison against Apache Jena and RDFLib
+
+Apache Jena and RDFLib are not present in this environment, so that comparison was not run and no numbers were invented for it.
 
 ## License
 

@@ -97,6 +97,9 @@ struct JoinNode { AlgebraPtr left, right; };
 struct LeftJoinNode { AlgebraPtr left, right; ExprPtr condition; };
 struct UnionNode { AlgebraPtr left, right; };
 struct FilterNode { AlgebraPtr child; ExprPtr condition; };
+// GRAPH <iri> { ... } or GRAPH ?g { ... }. The child is evaluated against one
+// named graph, or against every named graph with ?g bound to its name.
+struct GraphNode { PatternTerm graph; AlgebraPtr child; };
 
 struct GroupNode {
     AlgebraPtr child;
@@ -117,7 +120,7 @@ struct SliceNode {
 };
 
 struct Algebra {
-    std::variant<BgpNode, JoinNode, LeftJoinNode, UnionNode, FilterNode, GroupNode,
+    std::variant<BgpNode, JoinNode, LeftJoinNode, UnionNode, FilterNode, GraphNode, GroupNode,
                  ProjectNode, DistinctNode, OrderByNode, SliceNode>
         node;
 };

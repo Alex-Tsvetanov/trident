@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <sstream>
+#include <stdexcept>
 
 namespace trident {
 
@@ -45,17 +46,21 @@ std::string describe_plan(const Operator& root, int indent) {
 // --- IndexScan -----------------------------------------------------------
 
 IndexScan::IndexScan(const TripleStore& store, CompiledPattern pattern,
-                     const std::vector<int>& prebound_slots)
-    : store_(store), pattern_(std::move(pattern)) {
+                     const std::vector<int>& prebound_slots, TermId graph, int graph_slot)
+    : store_(store), pattern_(std::move(pattern)), graph_(graph), graph_slot_(graph_slot) {
     EncodedPattern base;
     base.s = pattern_.constant[0];
     base.p = pattern_.constant[1];
     base.o = pattern_.constant[2];
-    base_cardinality_ = pattern_.impossible ? 0 : store_.count(base);
+    if (pattern_.impossible) {
+        base_cardinality_ = 0;
+    } else if (graph_slot_ >= 0) {
+        // Bound at open time; use the default-graph count as a stable underestimate.
+        base_cardinality_ = store_.count(base);
+    } else {
+        base_cardinality_ = store_.count(base, graph_);
+    }
 
-    // The index this scan will really use depends on what the enclosing plan
-    // binds first, so the choice reported here is made with those slots counted
-    // as bound. Any identifier will do as a stand in: only boundness matters.
     EncodedPattern expected = base;
     TermId placeholder{1};
     for (int i = 0; i < 3; ++i) {
@@ -69,8 +74,6 @@ IndexScan::IndexScan(const TripleStore& store, CompiledPattern pattern,
     IndexChoice choice = choose_index(expected);
     chosen_order_ = choice.order;
     chosen_prefix_ = choice.prefix_len;
-    // The scan walks the index in its own order, so the first component after
-    // the constant prefix is the one the output is sorted by.
     const std::array<int, 3>& perm = store_.index(choice.order).permutation();
     if (choice.prefix_len < 3) {
         int component = perm[static_cast<std::size_t>(choice.prefix_len)];
@@ -82,7 +85,14 @@ void IndexScan::open(const Row& input) {
     input_ = input;
     rows_produced_ = 0;
     cursor_ = end_ = 0;
+    index_ = nullptr;
     if (pattern_.impossible) return;
+
+    TermId graph = graph_;
+    if (graph_slot_ >= 0) {
+        graph = input_[static_cast<std::size_t>(graph_slot_)];
+        if (!graph.valid()) return;
+    }
 
     EncodedPattern effective;
     TermId parts[3];
@@ -98,7 +108,12 @@ void IndexScan::open(const Row& input) {
     effective.o = parts[2];
 
     IndexChoice choice = choose_index(effective);
-    index_ = &store_.index(choice.order);
+    try {
+        index_ = &store_.index(choice.order, graph);
+    } catch (const std::out_of_range&) {
+        index_ = nullptr;
+        return;
+    }
     PermutedIndex::Range range =
         index_->prefix_range(Triple{effective.s, effective.p, effective.o}, choice.prefix_len);
     cursor_ = range.begin;
@@ -137,6 +152,92 @@ std::string IndexScan::label() const {
     out << "IndexScan " << index_name(chosen_order_) << " prefix=" << chosen_prefix_
         << " card=" << base_cardinality_ << "  { " << pattern_.text << " }";
     return out.str();
+}
+
+// --- BindNamedGraphs -----------------------------------------------------
+
+BindNamedGraphs::BindNamedGraphs(const TripleStore& store, int graph_slot)
+    : store_(store), graph_slot_(graph_slot) {}
+
+void BindNamedGraphs::open(const Row& input) {
+    input_ = input;
+    rows_produced_ = 0;
+    graphs_ = store_.named_graphs();
+    cursor_ = 0;
+}
+
+bool BindNamedGraphs::next(Row& out) {
+    if (cursor_ >= graphs_.size()) return false;
+    out = input_;
+    out[static_cast<std::size_t>(graph_slot_)] = graphs_[cursor_++];
+    ++rows_produced_;
+    return true;
+}
+
+std::string BindNamedGraphs::label() const {
+    return "BindNamedGraphs graphs=" + std::to_string(store_.named_graph_count());
+}
+
+// --- InferredTypeScan ----------------------------------------------------
+
+InferredTypeScan::InferredTypeScan(const TripleStore& store, TermId type_pred, TermId klass,
+                                   std::vector<TermId> properties, Side side, int subject_slot,
+                                   TermId graph, int graph_slot)
+    : store_(store), type_pred_(type_pred), klass_(klass), properties_(std::move(properties)),
+      side_(side), subject_slot_(subject_slot), graph_(graph), graph_slot_(graph_slot) {}
+
+void InferredTypeScan::open(const Row& input) {
+    input_ = input;
+    rows_produced_ = 0;
+    prop_index_ = 0;
+    cursor_ = end_ = 0;
+    index_ = nullptr;
+    seen_.clear();
+}
+
+bool InferredTypeScan::next(Row& out) {
+    TermId graph = graph_;
+    if (graph_slot_ >= 0) {
+        graph = input_[static_cast<std::size_t>(graph_slot_)];
+        if (!graph.valid()) return false;
+    }
+
+    while (prop_index_ <= properties_.size()) {
+        if (!index_ || cursor_ >= end_) {
+            if (prop_index_ >= properties_.size()) return false;
+            TermId property = properties_[prop_index_++];
+            EncodedPattern key;
+            key.p = property;
+            IndexChoice choice = choose_index(key);
+            try {
+                index_ = &store_.index(choice.order, graph);
+            } catch (const std::out_of_range&) {
+                index_ = nullptr;
+                continue;
+            }
+            auto range = index_->prefix_range(Triple{key.s, key.p, key.o}, choice.prefix_len);
+            cursor_ = range.begin;
+            end_ = range.end;
+            continue;
+        }
+        const Triple& triple = (*index_)[cursor_++];
+        TermId resource = side_ == Side::Domain ? triple.s : triple.o;
+        if (!seen_.insert(resource.raw()).second) continue;
+        out = input_;
+        if (subject_slot_ >= 0) {
+            TermId existing = out[static_cast<std::size_t>(subject_slot_)];
+            if (existing.valid() && existing != resource) continue;
+            out[static_cast<std::size_t>(subject_slot_)] = resource;
+        }
+        ++rows_produced_;
+        return true;
+    }
+    return false;
+}
+
+std::string InferredTypeScan::label() const {
+    return std::string("InferredTypeScan ") + (side_ == Side::Domain ? "domain" : "range") +
+           " props=" + std::to_string(properties_.size());
 }
 
 // --- UnitOperator --------------------------------------------------------

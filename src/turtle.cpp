@@ -349,4 +349,110 @@ std::size_t load_turtle_file(TripleStore& store, const std::string& path,
     return load_turtle(store, text, local);
 }
 
+namespace {
+
+Term read_nquads_term(TermReader& reader, bool allow_literal) {
+    CharStream& in = reader.stream();
+    reader.skip_ws();
+    int c = in.peek();
+    if (c == '<') return Term::iri(reader.read_iriref());
+    if (c == '_') {
+        std::string label = reader.read_blank_label();
+        return Term::blank(label);
+    }
+    if (allow_literal && (c == '"' || c == '\'')) return reader.read_literal();
+    reader.fail("expected an IRI, blank node" +
+                std::string(allow_literal ? " or literal" : ""));
+}
+
+}  // namespace
+
+std::size_t parse_nquads(std::string_view text, const QuadSink& sink,
+                         const TurtleOptions& options) {
+    TermReader reader(text);
+    std::size_t emitted = 0;
+    for (;;) {
+        reader.skip_ws();
+        if (reader.stream().eof()) break;
+        if (reader.stream().peek() == '#') {
+            // Comment to end of line.
+            while (!reader.stream().eof() && reader.stream().peek() != '\n') {
+                reader.stream().get();
+            }
+            continue;
+        }
+        Term s = read_nquads_term(reader, false);
+        Term p = read_nquads_term(reader, false);
+        Term o = read_nquads_term(reader, true);
+        reader.skip_ws();
+        int c = reader.stream().peek();
+        const Term* graph = nullptr;
+        Term gterm;
+        if (c != '.' && c >= 0) {
+            gterm = read_nquads_term(reader, false);
+            graph = &gterm;
+            reader.skip_ws();
+            c = reader.stream().peek();
+        }
+        if (c != '.') reader.fail("expected a full stop at the end of an N-Quads statement");
+        reader.stream().get();
+        // Rewrite blank node labels with the document scope, matching Turtle.
+        auto scope_blank = [&](Term& t) {
+            if (t.kind != TermKind::Blank || options.blank_scope.empty()) return;
+            t.value = options.blank_scope + "_" + t.value;
+        };
+        scope_blank(s);
+        scope_blank(o);
+        if (graph) {
+            Term g = *graph;
+            scope_blank(g);
+            sink(s, p, o, &g);
+        } else {
+            sink(s, p, o, nullptr);
+        }
+        ++emitted;
+    }
+    return emitted;
+}
+
+std::size_t load_nquads(TripleStore& store, std::string_view text,
+                        const TurtleOptions& options) {
+    struct StagedQuad {
+        Term s, p, o;
+        bool has_graph = false;
+        Term g;
+    };
+    std::vector<StagedQuad> staged;
+    std::size_t n = parse_nquads(
+        text,
+        [&](const Term& s, const Term& p, const Term& o, const Term* graph) {
+            StagedQuad q{s, p, o, graph != nullptr, {}};
+            if (graph) q.g = *graph;
+            staged.push_back(std::move(q));
+        },
+        options);
+    for (const StagedQuad& q : staged) {
+        if (q.has_graph) store.add(q.s, q.p, q.o, q.g);
+        else store.add(q.s, q.p, q.o);
+    }
+    return n;
+}
+
+std::size_t load_nquads_file(TripleStore& store, const std::string& path,
+                             const TurtleOptions& options) {
+    std::string text = read_file(path);
+    TurtleOptions local = options;
+    if (local.blank_scope.empty()) {
+        auto slash = path.find_last_of("/\\");
+        std::string stem = slash == std::string::npos ? path : path.substr(slash + 1);
+        auto dot = stem.find_last_of('.');
+        if (dot != std::string::npos) stem.resize(dot);
+        for (char& c : stem) {
+            if (!std::isalnum(static_cast<unsigned char>(c))) c = '_';
+        }
+        local.blank_scope = stem;
+    }
+    return load_nquads(store, text, local);
+}
+
 }  // namespace trident

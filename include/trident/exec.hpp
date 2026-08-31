@@ -58,8 +58,11 @@ public:
     // prebound_slots are the variables the enclosing plan will have bound by the
     // time this scan is opened. They do not change the result, only which index
     // the scan will reach for, which is what the plan printout has to show.
+    // graph selects the default graph or one named graph; graph_slot, when set,
+    // reads the graph name from the input row at open time (GRAPH ?g).
     IndexScan(const TripleStore& store, CompiledPattern pattern,
-              const std::vector<int>& prebound_slots = {});
+              const std::vector<int>& prebound_slots = {}, TermId graph = kDefaultGraph,
+              int graph_slot = -1);
 
     void open(const Row& input) override;
     bool next(Row& out) override;
@@ -78,10 +81,57 @@ private:
     int sorted_slot_ = -1;
     IndexOrder chosen_order_ = IndexOrder::Spo;
     int chosen_prefix_ = 0;
+    TermId graph_ = kDefaultGraph;
+    int graph_slot_ = -1;
 
     Row input_;
     const PermutedIndex* index_ = nullptr;
     std::size_t cursor_ = 0, end_ = 0;
+};
+
+// Emits one row per named graph, binding graph_slot to the graph's name. Used as
+// the left side of a nested loop when compiling GRAPH ?g { ... }.
+class BindNamedGraphs : public Operator {
+public:
+    BindNamedGraphs(const TripleStore& store, int graph_slot);
+    void open(const Row& input) override;
+    bool next(Row& out) override;
+    std::string label() const override;
+
+private:
+    const TripleStore& store_;
+    int graph_slot_;
+    Row input_;
+    std::vector<TermId> graphs_;
+    std::size_t cursor_ = 0;
+};
+
+// Yields inferred rdf:type rows from domain or range of stored triples. Used by
+// query-time RDFS when a type pattern cannot be answered from asserted types.
+class InferredTypeScan : public Operator {
+public:
+    enum class Side { Domain, Range };
+    InferredTypeScan(const TripleStore& store, TermId type_pred, TermId klass,
+                     std::vector<TermId> properties, Side side, int subject_slot,
+                     TermId graph = kDefaultGraph, int graph_slot = -1);
+    void open(const Row& input) override;
+    bool next(Row& out) override;
+    std::string label() const override;
+
+private:
+    const TripleStore& store_;
+    TermId type_pred_;
+    TermId klass_;
+    std::vector<TermId> properties_;
+    Side side_;
+    int subject_slot_;
+    TermId graph_;
+    int graph_slot_;
+    Row input_;
+    std::size_t prop_index_ = 0;
+    const PermutedIndex* index_ = nullptr;
+    std::size_t cursor_ = 0, end_ = 0;
+    std::unordered_set<std::uint64_t> seen_;
 };
 
 // Produces exactly one row, the empty solution mapping. This is the identity of

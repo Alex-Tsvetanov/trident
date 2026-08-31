@@ -1,6 +1,9 @@
 #include "trident/planner.hpp"
 
+#include "trident/rdfs.hpp"
+
 #include <algorithm>
+#include <memory>
 #include <sstream>
 
 namespace trident {
@@ -10,13 +13,15 @@ namespace {
 class PlanBuilder {
 public:
     PlanBuilder(TripleStore& store, Query& query, const PlanOptions& options)
-        : store_(store), query_(query), options_(options) {}
+        : store_(store), query_(query), options_(options) {
+        if (options_.rdfs_query_time) {
+            schema_ = std::make_unique<RdfsSchema>(store_);
+        }
+    }
 
     Plan run() {
         Plan plan;
         collect_algebra_variables(*query_.root, plan.variables);
-        // The projection may name a variable the pattern never binds. It still
-        // needs a slot so that the output has the column.
         for (const std::string& name : query_.projection) {
             if (std::find(plan.variables.begin(), plan.variables.end(), name) ==
                 plan.variables.end()) {
@@ -47,8 +52,6 @@ private:
             [&](auto& node) {
                 using T = std::decay_t<decltype(node)>;
                 if constexpr (std::is_same_v<T, BgpNode>) {
-                    // Nothing to resolve: patterns carry names and are compiled
-                    // to slots directly.
                 } else if constexpr (std::is_same_v<T, JoinNode> ||
                                      std::is_same_v<T, UnionNode>) {
                     resolve_slots(*node.left);
@@ -60,6 +63,8 @@ private:
                 } else if constexpr (std::is_same_v<T, FilterNode>) {
                     resolve_slots(*node.child);
                     resolve_expression_slots(*node.condition, variables_);
+                } else if constexpr (std::is_same_v<T, GraphNode>) {
+                    resolve_slots(*node.child);
                 } else if constexpr (std::is_same_v<T, GroupNode>) {
                     resolve_slots(*node.child);
                     for (Aggregate& agg : node.aggregates) {
@@ -86,12 +91,7 @@ private:
                 out.slot[i] = slot_of(positions[i]->variable);
             } else {
                 TermId id = store_.encode(positions[i]->constant);
-                if (!id.valid()) {
-                    // A constant that the dictionary never saw cannot match any
-                    // triple, so the whole pattern is empty and the planner can
-                    // say so without touching the index.
-                    out.impossible = true;
-                }
+                if (!id.valid()) out.impossible = true;
                 out.constant[i] = id;
             }
         }
@@ -117,10 +117,6 @@ private:
         return false;
     }
 
-    // Greedy ordering by exact pattern cardinality, preferring patterns that are
-    // connected to what has already been chosen. The most selective pattern goes
-    // first, so the intermediate result starts small and every later scan is an
-    // index lookup rather than a full pass.
     std::vector<std::size_t> order_patterns(const std::vector<CompiledPattern>& patterns,
                                             const std::vector<std::size_t>& cardinalities) {
         std::vector<std::size_t> order;
@@ -157,6 +153,91 @@ private:
         return order;
     }
 
+    OperatorPtr make_scan(CompiledPattern pattern, const std::vector<int>& prebound) {
+        return std::make_unique<IndexScan>(store_, std::move(pattern), prebound, graph_constant_,
+                                           graph_slot_);
+    }
+
+    // Expands one compiled pattern under query-time RDFS into a (possibly
+    // distinct) union of scans covering subproperties, subclasses, domain and
+    // range.
+    OperatorPtr make_rdfs_scan(CompiledPattern pattern, const std::vector<int>& prebound) {
+        if (!schema_ || pattern.impossible) {
+            return make_scan(std::move(pattern), prebound);
+        }
+
+        std::vector<OperatorPtr> arms;
+
+        const bool type_query =
+            pattern.constant[1].valid() && schema_->type_id().valid() &&
+            pattern.constant[1] == schema_->type_id() && pattern.constant[2].valid();
+
+        if (type_query) {
+            for (TermId klass : schema_->classes_entailing(pattern.constant[2])) {
+                CompiledPattern alt = pattern;
+                alt.constant[2] = klass;
+                arms.push_back(make_scan(std::move(alt), prebound));
+            }
+            auto domain_props = schema_->properties_with_domain(pattern.constant[2]);
+            // Include subproperties of domain-bearing properties.
+            std::vector<TermId> domain_all;
+            for (TermId p : domain_props) {
+                for (TermId sub : schema_->properties_entailing(p)) {
+                    bool seen = false;
+                    for (TermId existing : domain_all) {
+                        if (existing == sub) {
+                            seen = true;
+                            break;
+                        }
+                    }
+                    if (!seen) domain_all.push_back(sub);
+                }
+            }
+            if (!domain_all.empty()) {
+                arms.push_back(std::make_unique<InferredTypeScan>(
+                    store_, schema_->type_id(), pattern.constant[2], std::move(domain_all),
+                    InferredTypeScan::Side::Domain, pattern.slot[0], graph_constant_,
+                    graph_slot_));
+            }
+            auto range_props = schema_->properties_with_range(pattern.constant[2]);
+            std::vector<TermId> range_all;
+            for (TermId p : range_props) {
+                for (TermId sub : schema_->properties_entailing(p)) {
+                    bool seen = false;
+                    for (TermId existing : range_all) {
+                        if (existing == sub) {
+                            seen = true;
+                            break;
+                        }
+                    }
+                    if (!seen) range_all.push_back(sub);
+                }
+            }
+            if (!range_all.empty()) {
+                arms.push_back(std::make_unique<InferredTypeScan>(
+                    store_, schema_->type_id(), pattern.constant[2], std::move(range_all),
+                    InferredTypeScan::Side::Range, pattern.slot[0], graph_constant_,
+                    graph_slot_));
+            }
+        } else if (pattern.constant[1].valid()) {
+            for (TermId property : schema_->properties_entailing(pattern.constant[1])) {
+                CompiledPattern alt = pattern;
+                alt.constant[1] = property;
+                arms.push_back(make_scan(std::move(alt), prebound));
+            }
+        } else {
+            arms.push_back(make_scan(pattern, prebound));
+        }
+
+        if (arms.empty()) return make_scan(std::move(pattern), prebound);
+        OperatorPtr chain = std::move(arms[0]);
+        for (std::size_t i = 1; i < arms.size(); ++i) {
+            chain = std::make_unique<UnionOperator>(std::move(chain), std::move(arms[i]));
+        }
+        if (arms.size() > 1) chain = std::make_unique<DistinctOperator>(std::move(chain));
+        return chain;
+    }
+
     OperatorPtr compile_bgp(const BgpNode& bgp) {
         if (bgp.patterns.empty()) return std::make_unique<UnitOperator>();
 
@@ -169,7 +250,8 @@ private:
         cardinalities.reserve(compiled.size());
         for (const CompiledPattern& pattern : compiled) {
             EncodedPattern encoded{pattern.constant[0], pattern.constant[1], pattern.constant[2]};
-            cardinalities.push_back(pattern.impossible ? 0 : store_.count(encoded));
+            cardinalities.push_back(pattern.impossible ? 0
+                                                       : store_.count(encoded, graph_constant_));
         }
         std::vector<std::size_t> order = order_patterns(compiled, cardinalities);
 
@@ -180,29 +262,64 @@ private:
 
         std::vector<int> bound;
         pattern_variables(compiled[order[0]], bound);
-        OperatorPtr chain = std::make_unique<IndexScan>(store_, compiled[order[0]]);
+        OperatorPtr chain = options_.rdfs_query_time
+                                ? make_rdfs_scan(compiled[order[0]], {})
+                                : make_scan(compiled[order[0]], {});
 
         for (std::size_t i = 1; i < order.size(); ++i) {
             const CompiledPattern& pattern = compiled[order[i]];
-            // Merge join needs both sides scanned independently, so the candidate
-            // is built without the bindings the left side would otherwise supply.
-            auto independent = std::make_unique<IndexScan>(store_, pattern);
-            int left_sorted = chain->sorted_slot();
-            bool merge_ok = options_.enable_merge_join && left_sorted >= 0 &&
-                            left_sorted == independent->sorted_slot();
-            if (merge_ok) {
-                chain = std::make_unique<MergeJoin>(std::move(chain), std::move(independent),
-                                                    left_sorted);
-            } else {
-                // Index nested loop join: the right scan is told which variables
-                // will already be bound, so it reaches for the index that uses
-                // them as a prefix.
-                auto right = std::make_unique<IndexScan>(store_, pattern, bound);
+            if (options_.rdfs_query_time) {
+                auto right = make_rdfs_scan(pattern, bound);
                 chain = std::make_unique<NestedLoopJoin>(std::move(chain), std::move(right));
+            } else {
+                auto independent = make_scan(pattern, {});
+                int left_sorted = chain->sorted_slot();
+                bool merge_ok = options_.enable_merge_join && left_sorted >= 0 &&
+                                left_sorted == independent->sorted_slot();
+                if (merge_ok) {
+                    chain = std::make_unique<MergeJoin>(std::move(chain), std::move(independent),
+                                                        left_sorted);
+                } else {
+                    auto right = make_scan(pattern, bound);
+                    chain = std::make_unique<NestedLoopJoin>(std::move(chain), std::move(right));
+                }
             }
             pattern_variables(pattern, bound);
         }
         return chain;
+    }
+
+    OperatorPtr compile_graph(GraphNode& node) {
+        TermId saved_constant = graph_constant_;
+        int saved_slot = graph_slot_;
+
+        OperatorPtr inner;
+        if (node.graph.is_variable) {
+            int slot = slot_of(node.graph.variable);
+            graph_constant_ = kDefaultGraph;
+            graph_slot_ = slot;
+            inner = compile(*node.child);
+            graph_constant_ = saved_constant;
+            graph_slot_ = saved_slot;
+            auto binder = std::make_unique<BindNamedGraphs>(store_, slot);
+            return std::make_unique<NestedLoopJoin>(std::move(binder), std::move(inner));
+        }
+
+        TermId gid = store_.encode(node.graph.constant);
+        graph_constant_ = gid.valid() ? gid : TermId{1};  // unknown name: empty index
+        graph_slot_ = -1;
+        if (!gid.valid()) {
+            graph_constant_ = saved_constant;
+            graph_slot_ = saved_slot;
+            CompiledPattern empty;
+            empty.impossible = true;
+            empty.text = "GRAPH unknown";
+            return std::make_unique<IndexScan>(store_, std::move(empty));
+        }
+        inner = compile(*node.child);
+        graph_constant_ = saved_constant;
+        graph_slot_ = saved_slot;
+        return inner;
     }
 
     OperatorPtr compile(Algebra& algebra) {
@@ -224,6 +341,8 @@ private:
                     return std::make_unique<FilterOperator>(compile(*node.child),
                                                             node.condition.get(),
                                                             store_.dictionary());
+                } else if constexpr (std::is_same_v<T, GraphNode>) {
+                    return compile_graph(node);
                 } else if constexpr (std::is_same_v<T, GroupNode>) {
                     std::vector<int> key_slots;
                     for (const std::string& key : node.keys) key_slots.push_back(slot_of(key));
@@ -258,13 +377,15 @@ private:
     PlanOptions options_;
     std::vector<std::string> variables_;
     std::size_t estimate_ = 0;
+    TermId graph_constant_ = kDefaultGraph;
+    int graph_slot_ = -1;
+    std::unique_ptr<RdfsSchema> schema_;
 };
 
 }  // namespace
 
 Plan build_plan(TripleStore& store, Query& query, const PlanOptions& options) {
-    PlanBuilder builder(store, query, options);
-    return builder.run();
+    return PlanBuilder(store, query, options).run();
 }
 
 }  // namespace trident

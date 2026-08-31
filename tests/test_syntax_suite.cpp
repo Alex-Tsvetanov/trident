@@ -173,6 +173,11 @@ const SyntaxCase kSparqlCases[] = {
     {"sparql-positive-25-empty-pattern", "SELECT * WHERE { }", true},
     {"sparql-positive-26-dollar-variables", "SELECT $s WHERE { $s ?p ?o }", true},
 
+    {"sparql-positive-27-graph-iri",
+     "SELECT * WHERE { GRAPH <http://a/g> { ?s ?p ?o } }", true},
+    {"sparql-positive-28-graph-variable",
+     "SELECT * WHERE { GRAPH ?g { ?s ?p ?o } }", true},
+
     {"sparql-negative-01-no-select", "WHERE { ?s ?p ?o }", false},
     {"sparql-negative-02-empty-projection", "SELECT WHERE { ?s ?p ?o }", false},
     {"sparql-negative-03-unclosed-group", "SELECT * WHERE { ?s ?p ?o", false},
@@ -185,8 +190,8 @@ const SyntaxCase kSparqlCases[] = {
     {"sparql-negative-08-construct-not-supported",
      "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }", false},
     {"sparql-negative-09-describe-not-supported", "DESCRIBE <http://a/s>", false},
-    {"sparql-negative-10-graph-not-supported",
-     "SELECT * WHERE { GRAPH ?g { ?s ?p ?o } }", false},
+    {"sparql-negative-10-service-not-supported",
+     "SELECT * WHERE { SERVICE <http://a/ep> { ?s ?p ?o } }", false},
     {"sparql-negative-11-bind-not-supported",
      "SELECT * WHERE { ?s ?p ?o BIND (1 AS ?x) }", false},
     {"sparql-negative-12-values-not-supported",
@@ -260,7 +265,7 @@ TEST(syntax_suite, ntriples_corpus) {
 TEST(syntax_suite, sparql_corpus) {
     Tally tally = run_cases(kSparqlCases, false, true);
     if (tally.failed) ::testing::fail_at(__FILE__, __LINE__, tally.failures);
-    CHECK_EQ(tally.passed, 44);
+    CHECK_EQ(tally.passed, 46);
 }
 
 TEST(syntax_suite, every_rejection_carries_a_line_and_a_column) {

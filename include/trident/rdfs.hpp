@@ -1,8 +1,11 @@
-// RDFS entailment as a forward chaining pass over the store.
+// RDFS entailment: materialisation into the store, or expansion at query time.
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
 
 #include "trident/store.hpp"
 
@@ -31,5 +34,35 @@ struct RdfsStats {
 // store and rebuilds the indexes. Idempotent: running it twice infers nothing
 // the second time.
 RdfsStats materialise_rdfs(TripleStore& store);
+
+// Read-only view of the RDFS vocabulary inside a store, closed under
+// transitivity. Built once per query when PlanOptions::rdfs_query_time is set.
+class RdfsSchema {
+public:
+    explicit RdfsSchema(TripleStore& store);
+
+    TermId type_id() const { return type_; }
+    // Properties that entail `property` through subPropertyOf* (including itself).
+    std::vector<TermId> properties_entailing(TermId property) const;
+    // Classes that entail `klass` through subClassOf* (including itself).
+    std::vector<TermId> classes_entailing(TermId klass) const;
+    // Properties whose domain includes klass or a subclass of klass.
+    std::vector<TermId> properties_with_domain(TermId klass) const;
+    // Properties whose range includes klass or a subclass of klass.
+    std::vector<TermId> properties_with_range(TermId klass) const;
+
+private:
+    using Relation = std::unordered_map<std::uint64_t, std::vector<TermId>>;
+
+    std::vector<TermId> lookup(const Relation& relation, TermId key) const;
+
+    TermId type_ = kUnbound;
+    Relation super_property_;
+    Relation super_class_;
+    Relation sub_property_;
+    Relation sub_class_;
+    Relation domain_of_;
+    Relation range_of_;
+};
 
 }  // namespace trident

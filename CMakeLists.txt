@@ -15,10 +15,11 @@ endif()
 option(TRIDENT_BUILD_TESTS "Build the test binary and register it with CTest" ON)
 option(TRIDENT_BUILD_TOOLS "Build the demo and benchmark executables" ON)
 
-add_library(trident STATIC
+    add_library(trident STATIC
     src/term.cpp
     src/dictionary.cpp
     src/store.cpp
+    src/codec.cpp
     src/lexer.cpp
     src/turtle.cpp
     src/sparql_ast.cpp
@@ -69,6 +70,9 @@ if(TRIDENT_BUILD_TESTS)
         tests/test_exec.cpp
         tests/test_aggregate.cpp
         tests/test_rdfs.cpp
+        tests/test_rdfs_query.cpp
+        tests/test_persist.cpp
+        tests/test_graphs.cpp
         tests/test_syntax_suite.cpp
         tests/test_demo_queries.cpp
     )
@@ -79,7 +83,7 @@ if(TRIDENT_BUILD_TESTS)
 
     # One CTest entry per group. The binary filters its own registry by prefix,
     # so a group name is the only thing duplicated between here and the sources.
-    foreach(group dictionary turtle store sparql_parser planner exec aggregate rdfs syntax_suite demo_queries)
+    foreach(group dictionary turtle store sparql_parser planner exec aggregate rdfs rdfs_query persist graphs syntax_suite demo_queries)
         add_test(NAME ${group} COMMAND trident_tests ${group})
     endforeach()
 endif()

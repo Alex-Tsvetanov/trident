@@ -344,8 +344,28 @@ private:
                     LeftJoinNode{std::move(accumulated), std::move(right), std::move(condition)});
                 continue;
             }
+            if (peek_keyword("GRAPH")) {
+                take_keyword();
+                flush_pending();
+                PatternTerm graph_term;
+                reader_.skip_ws();
+                int gc = in().peek();
+                if (gc == '?' || gc == '$') {
+                    graph_term = PatternTerm::var(read_variable());
+                } else if (gc == '<') {
+                    graph_term = PatternTerm::value(Term::iri(reader_.read_iriref()));
+                } else {
+                    graph_term = PatternTerm::value(Term::iri(reader_.read_prefixed_name()));
+                }
+                AlgebraPtr inner = group_graph_pattern();
+                AlgebraPtr graph = make_algebra(GraphNode{std::move(graph_term), std::move(inner)});
+                accumulated = accumulated
+                                  ? make_algebra(JoinNode{std::move(accumulated), std::move(graph)})
+                                  : std::move(graph);
+                continue;
+            }
             if (peek_keyword("BIND") || peek_keyword("VALUES") || peek_keyword("SERVICE") ||
-                peek_keyword("GRAPH") || peek_keyword("MINUS")) {
+                peek_keyword("MINUS")) {
                 fail("this construct is outside the supported subset");
             }
             if (c == '{') {
